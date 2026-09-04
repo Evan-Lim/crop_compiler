@@ -259,6 +259,22 @@ void generate_rule(ASTNode* node) {
 void generate_statement(ASTNode* node) {
     if (!node) return;
     switch (node->type) {
+        case NODE_ASSIGN: {
+            indent(indent_level);
+            if (node->left && node->left->type == NODE_IDENTIFIER) {
+                Symbol* sym = lookup_symbol(node->left->name);
+                if (sym && sym->sym_type == SYM_OUTPUT) {
+                    fprintf(output, "output_%s_set(", sanitize_name(node->left->name));
+                    generate_expr(node->right);
+                    fprintf(output, ");\n");
+                } else {
+                    fprintf(output, "%s = ", node->left->name);
+                    generate_expr(node->right);
+                    fprintf(output, ";\n");
+                }
+            }
+            break;
+        }
         case NODE_IF: generate_if(node); break;
         case NODE_RETURN:
             indent(indent_level); fprintf(output, "return");
@@ -381,7 +397,14 @@ void generate_expr(ASTNode* node) {
         case NODE_INTEGER: fprintf(output, "%d", node->value.integer); break;
         case NODE_FLOAT: fprintf(output, "%f", node->value.float_val); break;
         case NODE_BOOLEAN: fprintf(output, node->value.integer ? "true" : "false"); break;
-        case NODE_IDENTIFIER: fprintf(output, "%s", node->name); break;
+        case NODE_IDENTIFIER: {
+            Symbol* sym = lookup_symbol(node->name);
+            if (sym && sym->sym_type == SYM_OUTPUT)
+                fprintf(output, "output_%s_get()", sanitize_name(node->name));
+            else
+                fprintf(output, "%s", node->name);
+            break;
+        }
         case NODE_BINOP:
             fprintf(output, "("); generate_expr(node->left);
             fprintf(output, " %s ", node->value.string);

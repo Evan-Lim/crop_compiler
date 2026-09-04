@@ -14,6 +14,7 @@ typedef enum {
     NODE_VAR,
     NODE_ARRAY_VAR,
     NODE_LET,
+    NODE_ASSIGN,
     NODE_RULE,
     NODE_IF,
     NODE_ELSE,
@@ -105,6 +106,7 @@ ASTNode* create_poll(ASTNode* time);
 ASTNode* create_var(char* name, ASTNode* type, ASTNode* value);
 ASTNode* create_array_var(char* name, ASTNode* type, int size, ASTNode* value);
 ASTNode* create_let(char* name, ASTNode* value);
+ASTNode* create_assignment(ASTNode* target, ASTNode* value);
 ASTNode* create_rule(char* name, ASTList* body);
 ASTNode* create_if(ASTNode* condition, ASTList* body, ASTNode* else_block);
 ASTNode* create_else(ASTList* body);

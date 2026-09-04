@@ -128,6 +128,13 @@ ASTNode* create_let(char* name, ASTNode* value) {
     return node;
 }
 
+ASTNode* create_assignment(ASTNode* target, ASTNode* value) {
+    ASTNode* node = create_node(NODE_ASSIGN);
+    node->left = target;
+    node->right = value;
+    return node;
+}
+
 ASTNode* create_rule(char* name, ASTList* body) {
     ASTNode* node = create_node(NODE_RULE);
     node->value.string = strdup(name);
@@ -355,6 +362,7 @@ const char* node_type_name(NodeType type) {
         case NODE_VAR: return "Var";
         case NODE_ARRAY_VAR: return "ArrayVar";
         case NODE_LET: return "Let";
+        case NODE_ASSIGN: return "Assign";
         case NODE_RULE: return "Rule";
         case NODE_IF: return "If";
         case NODE_ELSE: return "Else";
