@@ -4,7 +4,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -I./src
-LDFLAGS = -lm -lfl
+LDFLAGS = -lm
 
 LEX = flex
 YACC = bison -d -v
@@ -62,15 +62,22 @@ clean:
 	rm -f $(SRC_DIR)/lexer.c
 	rm -f $(SRC_DIR)/parser.c $(SRC_DIR)/parser.h
 	rm -f $(SRC_DIR)/crop.output
-	# Only remove generated C files and executables from examples
-	rm -f $(EXAMPLES_DIR)/*.c $(EXAMPLES_DIR)/*.elf $(EXAMPLES_DIR)/sim
+	# Keep checked-in examples/simulate.c and demo executables intact.
+	rm -f $(EXAMPLES_DIR)/hello.c $(EXAMPLES_DIR)/blink.c \
+	      $(EXAMPLES_DIR)/minimal.c $(EXAMPLES_DIR)/greenhouse.c $(EXAMPLES_DIR)/*.elf
 	rm -f *.c *.elf *.crop
 	@echo "✓ Cleaned all generated files (source .crop files preserved)"
 
 test: $(TARGET)
 	@echo ""
 	@echo "  [TEST]   Compiling examples/hello.crop"
-	./$(TARGET) $(EXAMPLES_DIR)/hello.crop --target=native
+	@tmp=$$(mktemp -d); \
+	  cp $(EXAMPLES_DIR)/hello.crop $$tmp/hello.crop; \
+	  ./$(TARGET) $$tmp/hello.crop --target=native && \
+	  grep -q 'output_led_set(true);' $$tmp/hello.c && \
+	  grep -q 'count = (count + 1);' $$tmp/hello.c && \
+	  grep -q 'every_0();' $$tmp/hello.c; \
+	  result=$$?; rm -rf $$tmp; exit $$result
 	@echo ""
 	@echo "✓ Test complete!"
 

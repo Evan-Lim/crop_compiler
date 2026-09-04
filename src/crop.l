@@ -6,9 +6,15 @@
 #include "parser.h"
 
 int yycolumn = 1;
+static int indent_stack[64] = {0};
+static int indent_top = 0;
+static int pending_indent = 0;
+static int pending_dedents = 0;
 
-extern int yylex();
+int yylex_impl(void);
 extern void yyerror(const char* msg);
+
+#define YY_DECL int yylex_impl(void)
 
 %}
 
@@ -137,11 +143,37 @@ false        { return TOKEN_FALSE; }
 
 {COMMENT}     { /* ignore */ }
 {ML_COMMENT}  { /* ignore */ }
-{WHITESPACE}  { /* ignore */ }
+{WHITESPACE}  { yycolumn += yyleng; }
 
-\n {
-    yylineno++;
-    yycolumn = 1;
+\n[ \t]* {
+    int width = 0;
+    for (size_t i = 1; i < yyleng; i++)
+        width += yytext[i] == '\t' ? 4 : 1;
+
+    int next = input();
+    if (next != 0) unput(next);
+    if (next == '\n' || next == '/')
+        return TOKEN_NEWLINE;
+
+    if (width > indent_stack[indent_top]) {
+        if (indent_top == 63) {
+            fprintf(stderr, "ERROR at line %d: indentation is too deep\n", yylineno);
+            return TOKEN_ERROR;
+        }
+        indent_stack[++indent_top] = width;
+        pending_indent = 1;
+    } else if (width < indent_stack[indent_top]) {
+        while (indent_top > 0 && width < indent_stack[indent_top]) {
+            indent_top--;
+            pending_dedents++;
+        }
+        if (width != indent_stack[indent_top]) {
+            fprintf(stderr, "ERROR at line %d: inconsistent indentation\n", yylineno);
+            return TOKEN_ERROR;
+        }
+    }
+    yycolumn = width + 1;
+    return TOKEN_NEWLINE;
 }
 
 . {
@@ -152,5 +184,20 @@ false        { return TOKEN_FALSE; }
 
 %%
 
-// yyerror is defined in parser
-extern void yyerror(const char* msg);
+int yylex(void) {
+    if (pending_indent) {
+        pending_indent = 0;
+        return TOKEN_INDENT;
+    }
+    if (pending_dedents) {
+        pending_dedents--;
+        return TOKEN_DEDENT;
+    }
+
+    int token = yylex_impl();
+    if (token == 0 && indent_top > 0) {
+        indent_top--;
+        return TOKEN_DEDENT;
+    }
+    return token;
+}

@@ -41,36 +41,44 @@ ASTNode* program_ast = NULL;
 %token TOKEN_EQ TOKEN_NEQ TOKEN_HASH
 %token TOKEN_FIXED TOKEN_TO TOKEN_IS
 %token TOKEN_TRUE TOKEN_FALSE
+%token TOKEN_NEWLINE TOKEN_INDENT TOKEN_DEDENT
 
 %token <number> TOKEN_INTEGER TOKEN_MS
 %token <float_val> TOKEN_FLOAT
 %token <string> TOKEN_IDENTIFIER TOKEN_STRING
 %token TOKEN_ERROR
 
-%type <node> program statement
+%type <node> program statement simple_stmt compound_stmt
 %type <node> sensor_decl output_decl var_decl let_decl
 %type <node> rule_decl if_stmt every_decl
 %type <node> fn_decl return_stmt
 %type <node> machine_decl state_decl transition_decl on_enter_decl
 %type <node> invariant_decl emit_decl init_decl extern_decl
-%type <node> expr primary_expr binop_expr unop_expr
-%type <node> type_expr opt_range opt_poll
+%type <node> expr primary_expr
+%type <node> type_expr opt_range opt_poll assignment
 %type <node> opt_state opt_else unsafe_block param
-%type <list> statement_list expr_list param_list
+%type <list> statement_list expr_list param_list suite
 
 %right TOKEN_ASSIGN
 %left TOKEN_EQ TOKEN_NEQ
+%left TOKEN_IS
 %left TOKEN_LT TOKEN_GT TOKEN_LTE TOKEN_GTE
 %left TOKEN_PLUS TOKEN_MINUS
 %left TOKEN_STAR TOKEN_SLASH TOKEN_PERCENT
 %right TOKEN_NOT
+%right TOKEN_UMINUS
 
 %%
 
 program
-    : statement_list {
-        program_ast = create_program($1);
+    : opt_newlines statement_list {
+        program_ast = create_program($2);
     }
+    ;
+
+opt_newlines
+    : /* empty */
+    | opt_newlines TOKEN_NEWLINE
     ;
 
 statement_list
@@ -80,25 +88,49 @@ statement_list
     | statement_list statement {
         $$ = append_list($1, $2);
     }
+    | statement_list TOKEN_NEWLINE {
+        $$ = $1;
+    }
     ;
 
 statement
+    : simple_stmt TOKEN_NEWLINE { $$ = $1; }
+    | compound_stmt { $$ = $1; }
+    ;
+
+simple_stmt
     : sensor_decl
     | output_decl
     | var_decl
     | let_decl
-    | rule_decl
+    | return_stmt
+    | invariant_decl
+    | emit_decl
+    | extern_decl
+    | unsafe_block
+    | transition_decl
+    | assignment
+    ;
+
+compound_stmt
+    : rule_decl
     | if_stmt
     | every_decl
     | fn_decl
-    | return_stmt
     | machine_decl
-    | invariant_decl
-    | emit_decl
+    | state_decl
+    | on_enter_decl
     | init_decl
-    | extern_decl
-    | unsafe_block
-    | expr TOKEN_ASSIGN expr
+    ;
+
+suite
+    : TOKEN_NEWLINE TOKEN_INDENT statement_list TOKEN_DEDENT { $$ = $3; }
+    ;
+
+assignment
+    : TOKEN_IDENTIFIER TOKEN_ASSIGN expr {
+        $$ = create_assignment(create_identifier($1), $3);
+    }
     ;
 
 sensor_decl
@@ -159,33 +191,33 @@ type_expr
     ;
 
 rule_decl
-    : TOKEN_RULE TOKEN_STRING TOKEN_COLON statement_list {
+    : TOKEN_RULE TOKEN_STRING TOKEN_COLON suite {
         $$ = create_rule($2, $4);
     }
     ;
 
 if_stmt
-    : TOKEN_IF expr TOKEN_COLON statement_list opt_else {
+    : TOKEN_IF expr TOKEN_COLON suite opt_else {
         $$ = create_if($2, $4, $5);
     }
     ;
 
 opt_else
     : /* empty */ { $$ = NULL; }
-    | TOKEN_ELSE TOKEN_COLON statement_list { $$ = create_else($3); }
-    | TOKEN_ELSE TOKEN_IF expr TOKEN_COLON statement_list opt_else {
+    | TOKEN_ELSE TOKEN_COLON suite { $$ = create_else($3); }
+    | TOKEN_ELSE TOKEN_IF expr TOKEN_COLON suite opt_else {
         $$ = create_else_if($3, $5, $6);
     }
     ;
 
 every_decl
-    : TOKEN_EVERY expr TOKEN_COLON statement_list {
+    : TOKEN_EVERY expr TOKEN_COLON suite {
         $$ = create_every($2, $4);
     }
     ;
 
 fn_decl
-    : TOKEN_FN TOKEN_IDENTIFIER TOKEN_LPAREN param_list TOKEN_RPAREN TOKEN_ARROW type_expr TOKEN_COLON statement_list {
+    : TOKEN_FN TOKEN_IDENTIFIER TOKEN_LPAREN param_list TOKEN_RPAREN TOKEN_ARROW type_expr TOKEN_COLON suite {
         $$ = create_fn($2, $4, $7, $9);
     }
     ;
@@ -212,22 +244,22 @@ return_stmt
     ;
 
 machine_decl
-    : TOKEN_MACHINE TOKEN_IDENTIFIER TOKEN_COLON statement_list {
+    : TOKEN_MACHINE TOKEN_IDENTIFIER TOKEN_COLON suite {
         $$ = create_machine($2, $4);
     }
     ;
 
 state_decl
-    : TOKEN_STATE TOKEN_IDENTIFIER TOKEN_COLON statement_list {
+    : TOKEN_STATE TOKEN_IDENTIFIER TOKEN_COLON suite {
         $$ = create_state_decl($2, $4);
     }
-    | TOKEN_INITIAL TOKEN_STATE TOKEN_IDENTIFIER TOKEN_COLON statement_list {
+    | TOKEN_INITIAL TOKEN_STATE TOKEN_IDENTIFIER TOKEN_COLON suite {
         $$ = create_initial_state($3, $5);
     }
     ;
 
 on_enter_decl
-    : TOKEN_ON_ENTER TOKEN_COLON statement_list {
+    : TOKEN_ON_ENTER TOKEN_COLON suite {
         $$ = create_on_enter($3);
     }
     ;
@@ -254,7 +286,7 @@ emit_decl
     ;
 
 init_decl
-    : TOKEN_INIT TOKEN_COLON statement_list {
+    : TOKEN_INIT TOKEN_COLON suite {
         $$ = create_init($3);
     }
     ;
@@ -273,8 +305,19 @@ unsafe_block
 
 expr
     : primary_expr
-    | binop_expr
-    | unop_expr
+    | expr TOKEN_PLUS expr { $$ = create_binop("+", $1, $3); }
+    | expr TOKEN_MINUS expr { $$ = create_binop("-", $1, $3); }
+    | expr TOKEN_STAR expr { $$ = create_binop("*", $1, $3); }
+    | expr TOKEN_SLASH expr { $$ = create_binop("/", $1, $3); }
+    | expr TOKEN_PERCENT expr { $$ = create_binop("%", $1, $3); }
+    | expr TOKEN_LT expr { $$ = create_binop("<", $1, $3); }
+    | expr TOKEN_GT expr { $$ = create_binop(">", $1, $3); }
+    | expr TOKEN_LTE expr { $$ = create_binop("<=", $1, $3); }
+    | expr TOKEN_GTE expr { $$ = create_binop(">=", $1, $3); }
+    | expr TOKEN_EQ expr { $$ = create_binop("==", $1, $3); }
+    | expr TOKEN_NEQ expr { $$ = create_binop("!=", $1, $3); }
+    | TOKEN_NOT expr { $$ = create_unop("not", $2); }
+    | TOKEN_MINUS expr %prec TOKEN_UMINUS { $$ = create_unop("-", $2); }
     | TOKEN_IDENTIFIER TOKEN_QUESTION {
         $$ = create_question($1);
     }
@@ -302,25 +345,6 @@ primary_expr
     | TOKEN_IDENTIFIER TOKEN_LPAREN expr_list TOKEN_RPAREN {
         $$ = create_function_call($1, $3);
     }
-    ;
-
-binop_expr
-    : expr TOKEN_PLUS expr { $$ = create_binop("+", $1, $3); }
-    | expr TOKEN_MINUS expr { $$ = create_binop("-", $1, $3); }
-    | expr TOKEN_STAR expr { $$ = create_binop("*", $1, $3); }
-    | expr TOKEN_SLASH expr { $$ = create_binop("/", $1, $3); }
-    | expr TOKEN_PERCENT expr { $$ = create_binop("%", $1, $3); }
-    | expr TOKEN_LT expr { $$ = create_binop("<", $1, $3); }
-    | expr TOKEN_GT expr { $$ = create_binop(">", $1, $3); }
-    | expr TOKEN_LTE expr { $$ = create_binop("<=", $1, $3); }
-    | expr TOKEN_GTE expr { $$ = create_binop(">=", $1, $3); }
-    | expr TOKEN_EQ expr { $$ = create_binop("==", $1, $3); }
-    | expr TOKEN_NEQ expr { $$ = create_binop("!=", $1, $3); }
-    ;
-
-unop_expr
-    : TOKEN_NOT expr { $$ = create_unop("not", $2); }
-    | TOKEN_MINUS expr { $$ = create_unop("-", $2); }
     ;
 
 expr_list
