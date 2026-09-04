@@ -1,0 +1,14 @@
+// ============================================================
+// blink.crop - LED Blink with timer
+// ============================================================
+
+output led pin D4 OFF
+
+var blink_state: bool = false
+
+every 500ms:
+    blink_state = !blink_state
+    if blink_state:
+        led = ON
+    else:
+        led = OFF

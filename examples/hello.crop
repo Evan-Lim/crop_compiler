@@ -1,0 +1,22 @@
+// ============================================================
+// hello.crop - Simple "Hello World" example
+// ============================================================
+// This demonstrates the basic syntax of CROP
+// ============================================================
+
+sensor button pin D3 @poll=10ms
+output led pin D4 OFF
+
+var count: u32 = 0
+
+rule "Blink":
+    if button is ON:
+        led = ON
+        count = count + 1
+    else:
+        led = OFF
+
+every 1s:
+    // Heartbeat - toggles every second
+    // (This is a comment)
+    led = !led

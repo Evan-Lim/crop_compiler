@@ -1,0 +1,100 @@
+// ============================================================
+// greenhouse.crop - Complete Greenhouse Controller Example
+// ============================================================
+
+// Hardware
+sensor moisture pin A0 range 0.0..100.0 @poll=500ms
+sensor temp I2C(0x68) -> f32 @poll=1s
+sensor flow_meter pin D3 @poll=10ms
+
+output water_pump pin D2 OFF
+output heater pin D3 OFF
+output status_led pin D4 ON
+actuator valve pin D5 OFF
+
+// Variables
+var cycle_count: u32 = 0
+var temp_history: [f32; 10] = [0.0; 10]
+var emergency_stop: bool = false
+
+// Interrupt
+on_interrupt D5 RISING:
+    emergency_stop = true
+    water_pump = OFF
+    heater = OFF
+
+// Payload
+payload SensorData:
+    f32 moisture
+    f32 temp
+    bool pumping
+    u32 cycle
+
+// Invariants
+invariant "No Flood":
+    !(water_pump is ON and moisture > 90.0)
+
+invariant "Thermal Safety":
+    !(heater is ON and temp > 35.0)
+
+// Function
+fn compute_average(values: [f32; 10]) -> f32:
+    var sum: f32 = 0.0
+    for i in 0..10:
+        sum = sum + values[i]
+    return sum / 10.0
+
+// State Machine
+machine Greenhouse:
+    initial state Idle:
+        on_enter:
+            status_led = OFF
+        transition to Watering when moisture < 25.0
+        transition to Heating when temp < 18.0
+
+    state Watering:
+        on_enter:
+            water_pump = ON
+            cycle_count = cycle_count + 1
+        transition to Idle after 15mins
+        transition to Error when moisture > 90.0 for 5s
+
+    state Heating:
+        on_enter:
+            heater = ON
+        transition to Idle when temp > 22.0
+        transition to Error when temp > 35.0 for 10s
+
+    state Error:
+        on_enter:
+            water_pump = OFF
+            heater = OFF
+            status_led = ON
+
+// Rules
+rule "Temperature Control":
+    let t = temp?
+    if emergency_stop:
+        heater = OFF
+    else if t > 40.0:
+        heater = OFF
+    else if t < 18.0:
+        heater = ON
+
+rule "Flow Monitoring":
+    if flow_meter triggers > 5 times within 10s buffer 20:
+        water_pump = OFF
+
+// Periodic Tasks
+every 1s:
+    status_led = !status_led
+
+every 5mins:
+    emit SensorData(moisture, temp, water_pump is ON, cycle_count) to MQTT("farm/greenhouse")
+
+// Init
+init:
+    Serial.begin(115200)
+    Wire.begin()
+    pinMode(D2, OUTPUT)
+    pinMode(D5, INPUT_PULLUP)
