@@ -75,8 +75,10 @@ test: $(TARGET)
 	  cp $(EXAMPLES_DIR)/hello.crop $$tmp/hello.crop; \
 	  ./$(TARGET) $$tmp/hello.crop --target=native && \
 	  grep -q 'output_led_set(true);' $$tmp/hello.c && \
-	  grep -q 'count = (count + 1);' $$tmp/hello.c && \
-	  grep -q 'every_0();' $$tmp/hello.c; \
+	  grep -q '__attribute__((weak)) bool sensor_button_read_opt()' $$tmp/hello.c && \
+	  grep -q 'output_led_commit();' $$tmp/hello.c && \
+	  grep -q 'every_0();' $$tmp/hello.c && \
+	  ! grep -q 'output_led_set(false);' $$tmp/hello.c; \
 	  result=$$?; rm -rf $$tmp; exit $$result
 	@echo ""
 	@echo "✓ Test complete!"
