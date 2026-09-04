@@ -1,7 +1,4 @@
-// ============================================================
-// blink.crop - LED Blink with timer
-// ============================================================
-
+// Simple LED blink example
 output led pin D4 OFF
 
 var blink_state: bool = false

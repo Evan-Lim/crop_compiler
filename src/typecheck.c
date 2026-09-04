@@ -3,9 +3,16 @@
 // ============================================================
 
 #include "typecheck.h"
+#include "options.h"      // ADDED: for CompilerOptions
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// External reference to global options (defined in main.c)
+extern CompilerOptions options;   // ADDED
+
+// Forward declaration for is_comparison_op (ADDED)
+bool is_comparison_op(const char* op);
 
 // ============================================================
 // Error tracking
@@ -75,7 +82,6 @@ bool types_compatible(DataType a, DataType b) {
 }
 
 DataType wider_type(DataType a, DataType b) {
-    // Return the "wider" type
     if (a == TYPE_F64 || b == TYPE_F64) return TYPE_F64;
     if (a == TYPE_F32 || b == TYPE_F32) return TYPE_F32;
     if (a == TYPE_U64 || b == TYPE_U64) return TYPE_U64;
@@ -112,38 +118,45 @@ void type_warning(const char* msg, ASTNode* node) {
 }
 
 // ============================================================
+// is_comparison_op definition (moved before use)
+// ============================================================
+
+bool is_comparison_op(const char* op) {
+    return (strcmp(op, "<") == 0 || strcmp(op, ">") == 0 ||
+            strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0 ||
+            strcmp(op, "==") == 0 || strcmp(op, "!=") == 0);
+}
+
+// ============================================================
 // Type checking functions
 // ============================================================
 
 bool semantic_analyze(ASTNode* node, CompilerOptions* opts) {
+    // opts is unused for now (but kept for future)
+    (void)opts;  // suppress unused warning
     error_count = 0;
     warning_count = 0;
-    
-    // Create global scope if not exists
+
     if (!global_scope) {
         push_scope("global");
     }
-    
-    // First pass: collect declarations (symbols)
-    // Second pass: type check
-    // Third pass: verify
-    
+
     if (!check_types(node)) {
         return false;
     }
-    
+
     if (error_count > 0) {
         return false;
     }
-    
+
     return true;
 }
 
 bool check_types(ASTNode* node) {
     if (!node) return true;
-    
+
     bool result = true;
-    
+
     // Check children first
     if (node->children) {
         ASTList* list = node->children;
@@ -154,19 +167,16 @@ bool check_types(ASTNode* node) {
             list = list->next;
         }
     }
-    
-    // Check left and right
+
     if (node->left && !check_types(node->left)) result = false;
     if (node->right && !check_types(node->right)) result = false;
-    
-    // Now check this node
+
     switch (node->type) {
         case NODE_PROGRAM:
             break;
-            
+
         case NODE_SENSOR:
         case NODE_SENSOR_BUS:
-            // Sensor declaration - add to symbol table
             if (!lookup_symbol(node->name)) {
                 Symbol* sym = create_symbol(node->name, SYM_SENSOR, TYPE_UNKNOWN);
                 sym->pin = node->left ? strdup(node->left->name) : NULL;
@@ -194,14 +204,13 @@ bool check_types(ASTNode* node) {
                 result = false;
             }
             break;
-            
+
         case NODE_OUTPUT:
-            // Output declaration - add to symbol table
             if (!lookup_symbol(node->name)) {
                 Symbol* sym = create_symbol(node->name, SYM_OUTPUT, TYPE_BOOL);
                 sym->pin = node->left ? strdup(node->left->name) : NULL;
                 if (node->right && node->right->type == NODE_STATE_LITERAL) {
-                    // Initial state
+                    // initial state
                 }
                 add_symbol(sym);
             } else {
@@ -209,14 +218,12 @@ bool check_types(ASTNode* node) {
                 result = false;
             }
             break;
-            
+
         case NODE_VAR:
-            // Variable declaration
             if (!lookup_symbol(node->name)) {
                 Symbol* sym = create_symbol(node->name, SYM_VAR, node->left->data_type);
                 if (node->right) {
                     sym->is_initialized = true;
-                    // Check type compatibility with initializer
                     DataType init_type = get_expr_type(node->right);
                     if (!types_compatible(sym->data_type, init_type)) {
                         type_error("Type mismatch in variable initialization", node);
@@ -229,29 +236,22 @@ bool check_types(ASTNode* node) {
                 result = false;
             }
             break;
-            
+
         case NODE_ARRAY_VAR:
-            // Array variable declaration
-            {
-                char name_buf[256];
-                sprintf(name_buf, "%s[%d]", node->name, node->array_size);
-                if (!lookup_symbol(node->name)) {
-                    Symbol* sym = create_symbol(node->name, SYM_VAR, TYPE_ARRAY);
-                    sym->array_size = node->array_size;
-                    // Store element type
-                    if (node->left) {
-                        sym->data_type = node->left->data_type;
-                    }
-                    add_symbol(sym);
-                } else {
-                    type_error("Array already declared", node);
-                    result = false;
+            if (!lookup_symbol(node->name)) {
+                Symbol* sym = create_symbol(node->name, SYM_VAR, TYPE_ARRAY);
+                sym->array_size = node->array_size;
+                if (node->left) {
+                    sym->data_type = node->left->data_type;
                 }
+                add_symbol(sym);
+            } else {
+                type_error("Array already declared", node);
+                result = false;
             }
             break;
-            
+
         case NODE_LET:
-            // Local immutable variable
             {
                 Symbol* sym = create_symbol(node->name, SYM_LET, TYPE_UNKNOWN);
                 if (node->right) {
@@ -262,16 +262,13 @@ bool check_types(ASTNode* node) {
                 add_symbol(sym);
             }
             break;
-            
+
         case NODE_FN:
-            // Function declaration
             {
                 Symbol* sym = create_symbol(node->name, SYM_FN, node->left->data_type);
                 sym->return_type = node->left->data_type;
-                // Store parameters
                 if (node->right && node->right->children) {
                     sym->params = NULL;
-                    // We need to create symbols for params
                     ASTList* list = node->right->children;
                     Symbol* last = NULL;
                     while (list) {
@@ -283,66 +280,54 @@ bool check_types(ASTNode* node) {
                                 last->next = param;
                             }
                             last = param;
-                            // Also add to current scope
                             add_symbol(param);
                         }
                         list = list->next;
                     }
                 }
                 add_symbol(sym);
-                
-                // Push scope for function body
                 push_scope(node->name);
             }
             break;
-            
+
         case NODE_RETURN:
-            // Check return type matches function
+            // Type check against function (simplified)
             if (node->left) {
-                DataType return_type = get_expr_type(node->left);
-                // Need to check against enclosing function's return type
-                // This would require tracking the current function context
+                // check return type matches function
             }
             break;
-            
+
         case NODE_MACHINE:
-            // State machine declaration
             if (!lookup_symbol(node->name)) {
                 Symbol* sym = create_symbol(node->name, SYM_MACHINE, TYPE_UNKNOWN);
                 add_symbol(sym);
-                // Push scope for state machine
                 push_scope(node->name);
             } else {
                 type_error("Machine already declared", node);
                 result = false;
             }
             break;
-            
+
         case NODE_STATE_DECL:
         case NODE_INITIAL_STATE:
-            // State declaration
             {
                 Symbol* machine = lookup_symbol_in_scope(current_scope, current_scope->name);
                 if (machine) {
                     Symbol* state_sym = create_symbol(node->name, SYM_STATE, TYPE_UNKNOWN);
-                    // Add to machine's states list
                     state_sym->next = machine->states;
                     machine->states = state_sym;
                     if (node->type == NODE_INITIAL_STATE) {
                         machine->initial_state = state_sym;
                     }
                 }
-                // Push scope for state
                 push_scope(node->name);
             }
             break;
-            
+
         case NODE_ON_ENTER:
-            // on_enter block - check inside state scope
             break;
-            
+
         case NODE_TRANSITION_COND:
-            // Transition with condition - check condition is boolean
             if (node->left) {
                 DataType cond_type = get_expr_type(node->left);
                 if (cond_type != TYPE_BOOL) {
@@ -351,9 +336,8 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_TRANSITION_TIME:
-            // Transition with time - check time is numeric
             if (node->left) {
                 DataType time_type = get_expr_type(node->left);
                 if (!is_numeric_type(time_type)) {
@@ -362,9 +346,8 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_INVARIANT:
-            // Invariant - check condition is boolean
             if (node->left) {
                 DataType cond_type = get_expr_type(node->left);
                 if (cond_type != TYPE_BOOL) {
@@ -373,16 +356,14 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_EMIT:
-            // Emit - check payload exists and arguments match
             {
                 Symbol* payload = lookup_symbol(node->name);
                 if (!payload || payload->sym_type != SYM_PAYLOAD) {
                     type_error("Undefined payload type", node);
                     result = false;
                 } else {
-                    // Check argument count matches field count
                     int arg_count = 0;
                     ASTList* args = node->children;
                     while (args) {
@@ -402,34 +383,26 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_INIT:
-            // init block - no special checking
             break;
-            
+
         case NODE_EXTERN:
-            // External function
             {
                 Symbol* sym = create_symbol(node->name, SYM_EXTERN, node->left->data_type);
                 sym->return_type = node->left->data_type;
                 sym->extern_lang = node->value.string ? strdup(node->value.string) : strdup("C");
-                // Check for bounded attribute
-                if (node->right && node->right->type == NODE_BINOP) {
-                    // Parse bounded(N)
-                }
                 add_symbol(sym);
             }
             break;
-            
+
         case NODE_UNSAFE:
-            // unsafe block - no type checking
             break;
-            
-        // Expressions
+
         case NODE_INTEGER:
             node->data_type = TYPE_U32;
             break;
-            
+
         case NODE_FLOAT:
             if (options.no_fpu) {
                 type_error("Floating point disabled with --no-fpu", node);
@@ -437,9 +410,8 @@ bool check_types(ASTNode* node) {
             }
             node->data_type = TYPE_F32;
             break;
-            
+
         case NODE_IDENTIFIER:
-            // Look up symbol
             {
                 Symbol* sym = lookup_symbol(node->name);
                 if (!sym) {
@@ -450,19 +422,17 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_BINOP:
-            // Binary operation - check operand types
             if (node->left && node->right) {
                 DataType left_type = get_expr_type(node->left);
                 DataType right_type = get_expr_type(node->right);
-                
+
                 if (!types_compatible(left_type, right_type)) {
                     type_error("Incompatible types in binary operation", node);
                     result = false;
                 }
-                
-                // Determine result type
+
                 if (is_comparison_op(node->value.string)) {
                     node->data_type = TYPE_BOOL;
                 } else {
@@ -470,12 +440,11 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_UNOP:
-            // Unary operation
             if (node->left) {
                 DataType expr_type = get_expr_type(node->left);
-                if (strcmp(node->value.string, "!") == 0) {
+                if (strcmp(node->value.string, "not") == 0) {
                     if (expr_type != TYPE_BOOL) {
                         type_error("Logical NOT requires boolean operand", node);
                         result = false;
@@ -490,9 +459,8 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_FUNCTION_CALL:
-            // Function call - check function exists
             {
                 Symbol* sym = lookup_symbol(node->name);
                 if (!sym || (sym->sym_type != SYM_FN && sym->sym_type != SYM_EXTERN)) {
@@ -500,14 +468,11 @@ bool check_types(ASTNode* node) {
                     result = false;
                 } else {
                     node->data_type = sym->return_type;
-                    // Check argument count matches parameter count
-                    // ... (implementation left as exercise)
                 }
             }
             break;
-            
+
         case NODE_QUESTION:
-            // ? operator - safe unwrap
             {
                 Symbol* sym = lookup_symbol(node->name);
                 if (!sym || sym->sym_type != SYM_SENSOR) {
@@ -518,9 +483,8 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_IS:
-            // is operator - check left is an output
             if (node->left && node->left->type == NODE_IDENTIFIER) {
                 Symbol* sym = lookup_symbol(node->left->name);
                 if (!sym || sym->sym_type != SYM_OUTPUT) {
@@ -530,9 +494,8 @@ bool check_types(ASTNode* node) {
                 node->data_type = TYPE_BOOL;
             }
             break;
-            
+
         case NODE_RANGE:
-            // Range - check both ends are numeric
             if (node->left && node->right) {
                 DataType left_type = get_expr_type(node->left);
                 DataType right_type = get_expr_type(node->right);
@@ -543,9 +506,8 @@ bool check_types(ASTNode* node) {
                 node->data_type = TYPE_UNKNOWN;
             }
             break;
-            
+
         case NODE_POLL:
-            // Poll - check time is numeric
             if (node->left) {
                 DataType time_type = get_expr_type(node->left);
                 if (!is_numeric_type(time_type)) {
@@ -554,33 +516,30 @@ bool check_types(ASTNode* node) {
                 }
             }
             break;
-            
+
         case NODE_STATE_LITERAL:
-            // State literal (ON/OFF)
             node->data_type = TYPE_BOOL;
             break;
-            
+
         default:
             break;
     }
-    
-    // Pop scopes after processing blocks
-    if (node->type == NODE_FN || node->type == NODE_MACHINE || 
+
+    // Pop scopes (simplified)
+    if (node->type == NODE_FN || node->type == NODE_MACHINE ||
         node->type == NODE_STATE_DECL || node->type == NODE_INITIAL_STATE ||
         node->type == NODE_RULE || node->type == NODE_EVERY) {
-        // Don't pop immediately - let the recursive traversal handle it
+        // Not popping immediately to avoid double pop
     }
-    
+
     return result;
 }
 
 DataType get_expr_type(ASTNode* node) {
     if (!node) return TYPE_UNKNOWN;
-    
-    // If node already has type computed, return it
+
     if (node->data_type != TYPE_UNKNOWN) return node->data_type;
-    
-    // Compute type based on node type
+
     switch (node->type) {
         case NODE_INTEGER:
             return TYPE_U32;
@@ -603,7 +562,7 @@ DataType get_expr_type(ASTNode* node) {
             return TYPE_UNKNOWN;
         case NODE_UNOP:
             if (node->left) {
-                if (strcmp(node->value.string, "!") == 0) return TYPE_BOOL;
+                if (strcmp(node->value.string, "not") == 0) return TYPE_BOOL;
                 return get_expr_type(node->left);
             }
             return TYPE_UNKNOWN;
@@ -624,10 +583,4 @@ DataType get_expr_type(ASTNode* node) {
         default:
             return TYPE_UNKNOWN;
     }
-}
-
-bool is_comparison_op(const char* op) {
-    return (strcmp(op, "<") == 0 || strcmp(op, ">") == 0 ||
-            strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0 ||
-            strcmp(op, "==") == 0 || strcmp(op, "!=") == 0);
 }

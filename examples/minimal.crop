@@ -1,0 +1,2 @@
+// Minimal CROP program for testing
+output led pin D4 OFF

@@ -1,33 +1,19 @@
-// ============================================================
-// crop.y - CROP Grammar (Bison)
-// ============================================================
-// This file defines the grammar rules for the CROP language.
-// Bison generates parser.c and parser.h.
-// ============================================================
-
 %{
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "ast.h"
 
-// Forward declarations
 extern int yylineno;
 extern int yycolumn;
 extern char* yytext;
 int yylex();
 
-// Error function
 void yyerror(const char* msg);
 
-// The resulting AST
 ASTNode* program_ast = NULL;
 
 %}
-
-// ============================================================
-// Union for token values
-// ============================================================
 
 %union {
     int number;
@@ -36,10 +22,6 @@ ASTNode* program_ast = NULL;
     ASTNode* node;
     ASTList* list;
 }
-
-// ============================================================
-// Token declarations
-// ============================================================
 
 %token TOKEN_SENSOR TOKEN_OUTPUT TOKEN_VAR TOKEN_LET
 %token TOKEN_RULE TOKEN_IF TOKEN_ELSE TOKEN_FOR TOKEN_EVERY
@@ -57,15 +39,13 @@ ASTNode* program_ast = NULL;
 %token TOKEN_PLUS TOKEN_MINUS TOKEN_STAR TOKEN_SLASH TOKEN_PERCENT
 %token TOKEN_NOT TOKEN_LT TOKEN_GT TOKEN_LTE TOKEN_GTE
 %token TOKEN_EQ TOKEN_NEQ TOKEN_HASH
+%token TOKEN_FIXED TOKEN_TO TOKEN_IS
+%token TOKEN_TRUE TOKEN_FALSE
 
 %token <number> TOKEN_INTEGER TOKEN_MS
 %token <float_val> TOKEN_FLOAT
-%token <string> TOKEN_IDENTIFIER
+%token <string> TOKEN_IDENTIFIER TOKEN_STRING
 %token TOKEN_ERROR
-
-// ============================================================
-// Type declarations for grammar rules
-// ============================================================
 
 %type <node> program statement
 %type <node> sensor_decl output_decl var_decl let_decl
@@ -74,12 +54,9 @@ ASTNode* program_ast = NULL;
 %type <node> machine_decl state_decl transition_decl on_enter_decl
 %type <node> invariant_decl emit_decl init_decl extern_decl
 %type <node> expr primary_expr binop_expr unop_expr
-%type <node> type_expr param_list opt_range opt_poll
-%type <list> statement_list expr_list
-
-// ============================================================
-// Precedence rules
-// ============================================================
+%type <node> type_expr opt_range opt_poll
+%type <node> opt_state opt_else unsafe_block param
+%type <list> statement_list expr_list param_list
 
 %right TOKEN_ASSIGN
 %left TOKEN_EQ TOKEN_NEQ
@@ -89,10 +66,6 @@ ASTNode* program_ast = NULL;
 %right TOKEN_NOT
 
 %%
-
-// ============================================================
-// Grammar rules
-// ============================================================
 
 program
     : statement_list {
@@ -125,19 +98,14 @@ statement
     | init_decl
     | extern_decl
     | unsafe_block
+    | expr TOKEN_ASSIGN expr
     ;
-
-// ============================================================
-// Hardware & I/O
-// ============================================================
 
 sensor_decl
     : TOKEN_SENSOR TOKEN_IDENTIFIER TOKEN_IDENTIFIER TOKEN_IDENTIFIER opt_range opt_poll {
-        // Pin mode: sensor name pin pin_id [range] [@poll=time]
         $$ = create_sensor($2, "pin", $4, $5, $6);
     }
     | TOKEN_SENSOR TOKEN_IDENTIFIER TOKEN_IDENTIFIER TOKEN_LPAREN expr TOKEN_RPAREN TOKEN_ARROW type_expr opt_poll {
-        // Bus mode: sensor name protocol(address) -> type [@poll=time]
         $$ = create_sensor_bus($2, $3, $5, $8, $9);
     }
     ;
@@ -164,13 +132,9 @@ opt_poll
 
 opt_state
     : /* empty */ { $$ = NULL; }
-    | TOKEN_ON { $$ = create_state("ON"); }
-    | TOKEN_OFF { $$ = create_state("OFF"); }
+    | TOKEN_ON { $$ = create_state_literal("ON"); }
+    | TOKEN_OFF { $$ = create_state_literal("OFF"); }
     ;
-
-// ============================================================
-// Data & Variables
-// ============================================================
 
 var_decl
     : TOKEN_VAR TOKEN_IDENTIFIER TOKEN_COLON type_expr TOKEN_ASSIGN expr {
@@ -189,14 +153,10 @@ let_decl
 
 type_expr
     : TOKEN_IDENTIFIER { $$ = create_type($1); }
-    | TOKEN_FIXED LT TOKEN_IDENTIFIER TOKEN_COMMA TOKEN_IDENTIFIER GT {
+    | TOKEN_FIXED TOKEN_LT TOKEN_IDENTIFIER TOKEN_COMMA TOKEN_IDENTIFIER TOKEN_GT {
         $$ = create_fixed_type($3, $5);
     }
     ;
-
-// ============================================================
-// Reactive Control Flow
-// ============================================================
 
 rule_decl
     : TOKEN_RULE TOKEN_STRING TOKEN_COLON statement_list {
@@ -224,10 +184,6 @@ every_decl
     }
     ;
 
-// ============================================================
-// Computative Layer
-// ============================================================
-
 fn_decl
     : TOKEN_FN TOKEN_IDENTIFIER TOKEN_LPAREN param_list TOKEN_RPAREN TOKEN_ARROW type_expr TOKEN_COLON statement_list {
         $$ = create_fn($2, $4, $7, $9);
@@ -237,9 +193,7 @@ fn_decl
 param_list
     : /* empty */ { $$ = NULL; }
     | param { $$ = create_list($1, NULL); }
-    | param_list TOKEN_COMMA param {
-        $$ = append_list($1, $3);
-    }
+    | param_list TOKEN_COMMA param { $$ = append_list($1, $3); }
     ;
 
 param
@@ -256,10 +210,6 @@ return_stmt
         $$ = create_return(NULL);
     }
     ;
-
-// ============================================================
-// State Machines
-// ============================================================
 
 machine_decl
     : TOKEN_MACHINE TOKEN_IDENTIFIER TOKEN_COLON statement_list {
@@ -291,19 +241,11 @@ transition_decl
     }
     ;
 
-// ============================================================
-// Formal Verification
-// ============================================================
-
 invariant_decl
     : TOKEN_INVARIANT TOKEN_STRING TOKEN_COLON expr {
         $$ = create_invariant($2, $4);
     }
     ;
-
-// ============================================================
-// Network Communication
-// ============================================================
 
 emit_decl
     : TOKEN_EMIT TOKEN_IDENTIFIER TOKEN_LPAREN expr_list TOKEN_RPAREN TOKEN_TO TOKEN_IDENTIFIER TOKEN_LPAREN TOKEN_STRING TOKEN_RPAREN {
@@ -311,19 +253,11 @@ emit_decl
     }
     ;
 
-// ============================================================
-// Startup / Initialisation
-// ============================================================
-
 init_decl
     : TOKEN_INIT TOKEN_COLON statement_list {
         $$ = create_init($3);
     }
     ;
-
-// ============================================================
-// Interoperability
-// ============================================================
 
 extern_decl
     : TOKEN_EXTERN TOKEN_STRING TOKEN_FN TOKEN_IDENTIFIER TOKEN_LPAREN param_list TOKEN_RPAREN TOKEN_ARROW type_expr {
@@ -337,10 +271,6 @@ unsafe_block
     }
     ;
 
-// ============================================================
-// Expressions
-// ============================================================
-
 expr
     : primary_expr
     | binop_expr
@@ -351,14 +281,23 @@ expr
     | expr TOKEN_IS TOKEN_IDENTIFIER {
         $$ = create_is_expr($1, $3);
     }
+    | expr TOKEN_IS TOKEN_ON {
+        $$ = create_is_expr($1, "ON");
+    }
+    | expr TOKEN_IS TOKEN_OFF {
+        $$ = create_is_expr($1, "OFF");
+    }
     ;
 
 primary_expr
     : TOKEN_IDENTIFIER { $$ = create_identifier($1); }
     | TOKEN_INTEGER { $$ = create_integer($1); }
     | TOKEN_FLOAT { $$ = create_float($1); }
-    | TOKEN_ON { $$ = create_state("ON"); }
-    | TOKEN_OFF { $$ = create_state("OFF"); }
+    | TOKEN_ON { $$ = create_state_literal("ON"); }
+    | TOKEN_OFF { $$ = create_state_literal("OFF"); }
+    | TOKEN_MS { $$ = create_integer($1); }
+    | TOKEN_TRUE { $$ = create_boolean(1); }
+    | TOKEN_FALSE { $$ = create_boolean(0); }
     | TOKEN_LPAREN expr TOKEN_RPAREN { $$ = $2; }
     | TOKEN_IDENTIFIER TOKEN_LPAREN expr_list TOKEN_RPAREN {
         $$ = create_function_call($1, $3);
@@ -390,10 +329,6 @@ expr_list
     ;
 
 %%
-
-// ============================================================
-// Error handling
-// ============================================================
 
 void yyerror(const char* msg) {
     fprintf(stderr, "ERROR at line %d, column %d: %s\n", yylineno, yycolumn, msg);

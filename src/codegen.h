@@ -17,6 +17,7 @@
 // Function prototypes
 // ============================================================
 
+bool check_invariants(ASTNode* node);
 bool generate_c_code(ASTNode* node, const char* output_file, CompilerOptions* opts);
 
 // Code generation functions

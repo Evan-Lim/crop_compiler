@@ -13,7 +13,7 @@
 
 Scope* global_scope = NULL;
 Scope* current_scope = NULL;
-static int next_scope_level = 0;
+// static int next_scope_level = 0;
 
 // ============================================================
 // Scope management

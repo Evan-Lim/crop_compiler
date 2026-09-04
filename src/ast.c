@@ -1,22 +1,11 @@
-// ============================================================
-// ast.c - AST Implementation
-// ============================================================
-// This file implements all the AST creation and manipulation
-// functions declared in ast.h.
-// ============================================================
-
 #include "ast.h"
 #include <stdarg.h>
-
-// ============================================================
-// Node creation
-// ============================================================
 
 ASTNode* create_node(NodeType type) {
     ASTNode* node = (ASTNode*)calloc(1, sizeof(ASTNode));
     node->type = type;
     node->data_type = TYPE_UNKNOWN;
-    node->line = 0;  // Will be filled by lexer later
+    node->line = 0;
     node->column = 0;
     return node;
 }
@@ -41,6 +30,13 @@ ASTNode* create_float(float value) {
     return node;
 }
 
+ASTNode* create_boolean(int value) {
+    ASTNode* node = create_node(NODE_BOOLEAN);
+    node->value.integer = value;
+    node->data_type = TYPE_BOOL;
+    return node;
+}
+
 ASTNode* create_identifier(char* name) {
     ASTNode* node = create_node(NODE_IDENTIFIER);
     node->name = strdup(name);
@@ -50,8 +46,6 @@ ASTNode* create_identifier(char* name) {
 ASTNode* create_type(char* name) {
     ASTNode* node = create_node(NODE_TYPE);
     node->name = strdup(name);
-    
-    // Map type name to DataType enum
     if (strcmp(name, "u8") == 0) node->data_type = TYPE_U8;
     else if (strcmp(name, "u16") == 0) node->data_type = TYPE_U16;
     else if (strcmp(name, "u32") == 0) node->data_type = TYPE_U32;
@@ -63,7 +57,6 @@ ASTNode* create_type(char* name) {
     else if (strcmp(name, "f32") == 0) node->data_type = TYPE_F32;
     else if (strcmp(name, "f64") == 0) node->data_type = TYPE_F64;
     else if (strcmp(name, "bool") == 0) node->data_type = TYPE_BOOL;
-    
     return node;
 }
 
@@ -75,14 +68,11 @@ ASTNode* create_fixed_type(char* w, char* s) {
     return node;
 }
 
-// ============================================================
-// Hardware nodes
-// ============================================================
-
 ASTNode* create_sensor(char* name, char* mode, char* pin, ASTNode* range, ASTNode* poll) {
+    (void)mode;
     ASTNode* node = create_node(NODE_SENSOR);
     node->name = strdup(name);
-    node->left = create_identifier(pin);
+    node->value.string = strdup(pin);
     node->right = range;
     node->children = create_list(poll, NULL);
     return node;
@@ -101,7 +91,7 @@ ASTNode* create_sensor_bus(char* name, char* protocol, ASTNode* address, ASTNode
 ASTNode* create_output(char* name, char* pin, ASTNode* state) {
     ASTNode* node = create_node(NODE_OUTPUT);
     node->name = strdup(name);
-    node->left = create_identifier(pin);
+    node->value.string = strdup(pin);
     node->right = state;
     return node;
 }
@@ -111,10 +101,6 @@ ASTNode* create_poll(ASTNode* time) {
     node->left = time;
     return node;
 }
-
-// ============================================================
-// Data nodes
-// ============================================================
 
 ASTNode* create_var(char* name, ASTNode* type, ASTNode* value) {
     ASTNode* node = create_node(NODE_VAR);
@@ -141,10 +127,6 @@ ASTNode* create_let(char* name, ASTNode* value) {
     node->right = value;
     return node;
 }
-
-// ============================================================
-// Control flow nodes
-// ============================================================
 
 ASTNode* create_rule(char* name, ASTList* body) {
     ASTNode* node = create_node(NODE_RULE);
@@ -182,10 +164,6 @@ ASTNode* create_every(ASTNode* interval, ASTList* body) {
     return node;
 }
 
-// ============================================================
-// Function nodes
-// ============================================================
-
 ASTNode* create_fn(char* name, ASTList* params, ASTNode* return_type, ASTList* body) {
     ASTNode* node = create_node(NODE_FN);
     node->name = strdup(name);
@@ -209,10 +187,6 @@ ASTNode* create_return(ASTNode* value) {
     node->left = value;
     return node;
 }
-
-// ============================================================
-// State machine nodes
-// ============================================================
 
 ASTNode* create_machine(char* name, ASTList* body) {
     ASTNode* node = create_node(NODE_MACHINE);
@@ -255,20 +229,12 @@ ASTNode* create_transition_time(char* target, ASTNode* time) {
     return node;
 }
 
-// ============================================================
-// Verification nodes
-// ============================================================
-
 ASTNode* create_invariant(char* name, ASTNode* condition) {
     ASTNode* node = create_node(NODE_INVARIANT);
     node->value.string = strdup(name);
     node->left = condition;
     return node;
 }
-
-// ============================================================
-// Network nodes
-// ============================================================
 
 ASTNode* create_emit(char* payload, ASTList* args, char* protocol, char* address) {
     ASTNode* node = create_node(NODE_EMIT);
@@ -278,10 +244,6 @@ ASTNode* create_emit(char* payload, ASTList* args, char* protocol, char* address
     node->left = create_identifier(address);
     return node;
 }
-
-// ============================================================
-// Other nodes
-// ============================================================
 
 ASTNode* create_init(ASTList* body) {
     ASTNode* node = create_node(NODE_INIT);
@@ -303,10 +265,6 @@ ASTNode* create_unsafe(char* code) {
     node->value.string = strdup(code);
     return node;
 }
-
-// ============================================================
-// Expression nodes
-// ============================================================
 
 ASTNode* create_binop(char* op, ASTNode* left, ASTNode* right) {
     ASTNode* node = create_node(NODE_BINOP);
@@ -356,10 +314,6 @@ ASTNode* create_state_literal(char* name) {
     return node;
 }
 
-// ============================================================
-// List functions
-// ============================================================
-
 ASTList* create_list(ASTNode* node, ASTList* next) {
     ASTList* list = (ASTList*)malloc(sizeof(ASTList));
     list->node = node;
@@ -381,10 +335,6 @@ void free_list(ASTList* list) {
     free_ast(list->node);
     free(list);
 }
-
-// ============================================================
-// Utility functions
-// ============================================================
 
 void free_ast(ASTNode* node) {
     if (!node) return;
@@ -425,6 +375,7 @@ const char* node_type_name(NodeType type) {
         case NODE_UNSAFE: return "Unsafe";
         case NODE_INTEGER: return "Integer";
         case NODE_FLOAT: return "Float";
+        case NODE_BOOLEAN: return "Boolean";
         case NODE_IDENTIFIER: return "Identifier";
         case NODE_TYPE: return "Type";
         case NODE_FIXED_TYPE: return "FixedType";

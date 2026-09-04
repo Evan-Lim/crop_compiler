@@ -1,24 +1,12 @@
-// ============================================================
-// crop.l - CROP Lexical Analyzer (Flex)
-// ============================================================
-// This file defines the tokens for the CROP language.
-// Flex generates lexer.c which provides yylex() function.
-// ============================================================
-
 %{
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "parser.h"  // Token definitions from Bison
+#include "ast.h"
+#include "parser.h"
 
-// Helper to create string tokens
-#define YYSTYPE char*
-
-// Location tracking
-int yylineno = 1;
 int yycolumn = 1;
 
-// Forward declaration
 extern int yylex();
 extern void yyerror(const char* msg);
 
@@ -26,10 +14,6 @@ extern void yyerror(const char* msg);
 
 %option noyywrap
 %option yylineno
-
-// ============================================================
-// Helper definitions (regular expressions)
-// ============================================================
 
 DIGIT       [0-9]
 LETTER      [a-zA-Z_]
@@ -43,15 +27,13 @@ HEX         0x{DIGIT}+
 COMMENT     "//".*
 ML_COMMENT  "/*"([^*]|\*+[^*/])*\*+"/"
 WHITESPACE  [ \t\r]+
+STRING      \"[^\"\\]*(\\.[^\"\\]*)*\"
 
 %%
 
-// ============================================================
-// Keywords
-// ============================================================
-
 sensor       { return TOKEN_SENSOR; }
 output       { return TOKEN_OUTPUT; }
+actuator     { return TOKEN_OUTPUT; }
 var          { return TOKEN_VAR; }
 let          { return TOKEN_LET; }
 rule         { return TOKEN_RULE; }
@@ -70,21 +52,18 @@ requires     { return TOKEN_REQUIRES; }
 ensures      { return TOKEN_ENSURE; }
 emit         { return TOKEN_EMIT; }
 extern       { return TOKEN_EXTERN; }
-
-// State machine keywords
 initial      { return TOKEN_INITIAL; }
 transition   { return TOKEN_TRANSITION; }
 on_enter     { return TOKEN_ON_ENTER; }
 when         { return TOKEN_WHEN; }
 after        { return TOKEN_AFTER; }
-
-// Output states
 ON           { return TOKEN_ON; }
 OFF          { return TOKEN_OFF; }
-
-// ============================================================
-// Identifiers and literals
-// ============================================================
+fixed        { return TOKEN_FIXED; }
+to           { return TOKEN_TO; }
+is           { return TOKEN_IS; }
+true         { return TOKEN_TRUE; }
+false        { return TOKEN_FALSE; }
 
 {IDENTIFIER} {
     yylval.string = strdup(yytext);
@@ -121,9 +100,11 @@ OFF          { return TOKEN_OFF; }
     return TOKEN_MS;
 }
 
-// ============================================================
-// Special syntax
-// ============================================================
+{STRING} {
+    yylval.string = strdup(yytext + 1);
+    yylval.string[strlen(yylval.string)-1] = '\0';
+    return TOKEN_STRING;
+}
 
 "@" { return TOKEN_AT; }
 "->" { return TOKEN_ARROW; }
@@ -154,23 +135,14 @@ OFF          { return TOKEN_OFF; }
 ">"  { return TOKEN_GT; }
 "#"  { return TOKEN_HASH; }
 
-// ============================================================
-// Comments and whitespace
-// ============================================================
-
 {COMMENT}     { /* ignore */ }
 {ML_COMMENT}  { /* ignore */ }
 {WHITESPACE}  { /* ignore */ }
 
-// Newline tracking
 \n {
     yylineno++;
     yycolumn = 1;
 }
-
-// ============================================================
-// Error handling
-// ============================================================
 
 . {
     fprintf(stderr, "ERROR at line %d, column %d: Unexpected character '%s'\n",
@@ -180,10 +152,5 @@ OFF          { return TOKEN_OFF; }
 
 %%
 
-// ============================================================
-// Helper function for error reporting
-// ============================================================
-
-void yyerror(const char* msg) {
-    fprintf(stderr, "ERROR at line %d, column %d: %s\n", yylineno, yycolumn, msg);
-}
+// yyerror is defined in parser
+extern void yyerror(const char* msg);
